@@ -195,6 +195,7 @@ class LLaMA(nn.Module):
             bias=False,
         )
 
+        print(f"should not be tied heads: {self.config.tie_heads}")
         # TP does not work with tied weights
         if (
             not isinstance(self.distributed_strategy, TensorParallelStrategy)
@@ -206,6 +207,7 @@ class LLaMA(nn.Module):
                 "You're using TP on a model with tied weights between head and embedding. "
                 "The tied weights won't be sharded, which can result in unexpected OOMs."
             )
+            print("THIS SHOULD BE EXECUTED, WEIGHTS NOT TIED")
             self.shared = shared
 
         self.rot_emb = RotaryEmbedding(
