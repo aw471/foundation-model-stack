@@ -20,8 +20,15 @@ from fms.distributed.strategy import (
     UniformModelParallelStrategy,
 )
 from fms.utils import fusion, serialization
-
-
+from torch.distributed.tensor import init_device_mesh, Shard, Replicate
+from torch.distributed.tensor.parallel import (
+    ColwiseParallel,
+    PrepareModuleInput,
+    RowwiseParallel,
+    SequenceParallel,
+    parallelize_module,
+    PrepareModuleOutput
+)
 logger = logging.getLogger(__name__)
 
 __models: MutableMapping[str, MutableMapping[str, Callable[[], nn.Module]]] = {}
@@ -467,8 +474,8 @@ def get_model(
             if t.device == torch.device("meta")
             else t
         )
-
     return fms_model
+
 
 
 from fms.models import gpt_bigcode, granite, llama, mixtral, roberta

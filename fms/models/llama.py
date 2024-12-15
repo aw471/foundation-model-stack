@@ -22,7 +22,6 @@ from fms.utils.activation import str_to_activation
 from fms.utils.config import ModelConfig
 from fms.utils.tokenizers import _has_hf
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -134,7 +133,7 @@ class LLaMABlock(nn.Module):
         residual = x
         x = self.ln(x)
         x = self.attn(
-            q=x,
+            x,
             mask=mask,
             position_ids=position_ids,
             attn_algorithm=attn_algorithm,
@@ -366,15 +365,13 @@ class LLaMA(nn.Module):
                 is_causal_mask = True
         else:
             is_causal_mask = False
-
         x_in = self.shared(x_in)
 
         # this is the output cache for all the decoder layers
         present_key_value_states = []
-
         for i, layer in enumerate(self.layers):
             output = layer(
-                x=x_in,
+                x_in,
                 mask=mask,
                 position_ids=position_ids,
                 past_key_value_state=past_key_value_states[i],
