@@ -12,6 +12,15 @@ from fms.distributed.strategy import (
     NoOpStrategy,
     TensorParallelStrategy,
 )
+from torch.distributed.tensor import Shard, Replicate
+from torch.distributed.tensor.parallel import (
+   parallelize_module,
+   ColwiseParallel,
+   RowwiseParallel,
+   SequenceParallel,
+   PrepareModuleInput,
+   PrepareModuleOutput
+)
 from fms.modules.attention import MultiHeadAttention
 from fms.modules.embedding import WordEmbedding
 from fms.modules.feedforward import GatedLinearUnit
@@ -340,6 +349,7 @@ class LLaMA(nn.Module):
         past_key_value_states=None,
         use_cache=False,
         attn_algorithm=None,
+        use_parallel=False
     ):
         # Embed the given vocabulary indices using the given attention mask, with pre-/post-norm and dropout as specified
         # x_in: batch_size x seq_len
@@ -365,7 +375,24 @@ class LLaMA(nn.Module):
                 is_causal_mask = True
         else:
             is_causal_mask = False
+        
+        if use_parallel:
+            print(f"entered for {x_in.shape}")
+            self.shared = parallelize_module(self.shared, self.distributed_strategy.device_mesh, {
+                "shared.emb": RowwiseParallel(input_layouts=Replicate(),output_layouts=Shard(1)),
+            })
+            self._apply_parallelization()
+        else:
+            self.shared = WordEmbedding(
+            self.config.src_vocab_size,
+            self.config.emb_dim,
+            padding_idx=self.config.pad_id,
+            abs_pos=False,
+            reversible=True,
+            tie_weights=self.config.tie_heads,
+            bias=False).to(torch.device(self.distributed_strategy.device_type))
         x_in = self.shared(x_in)
+        print(f"embedding output for {x_in.shape}")
 
         # this is the output cache for all the decoder layers
         present_key_value_states = []
@@ -404,8 +431,9 @@ class LLaMA(nn.Module):
         only_last_token: bool = False,
         attn_algorithm: Optional[str] = None,
     ):
+        use_parallel = x.size(1) > self.distributed_strategy.world
         output, cache = self._helper(
-            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm
+            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm, use_parallel
         )
 
         if only_last_token:
@@ -416,6 +444,32 @@ class LLaMA(nn.Module):
             return preds, cache
         else:
             return preds
+    
+
+    def _apply_parallelization(self):
+        plan = {
+            #"ln": SequenceParallel(use_local_output=True),
+            "attn": PrepareModuleInput(
+                input_layouts=(Shard(1),),
+                desired_input_layouts=(Replicate(),),
+                ),
+            "attn.in_proj.qkv_fused": ColwiseParallel(),
+            "attn.in_proj.query": ColwiseParallel(),
+            "attn.in_proj.key": ColwiseParallel(),
+            "attn.in_proj.value": ColwiseParallel(),
+            "attn.dense": RowwiseParallel(output_layouts=Shard(1)),
+            "ffn_ln": SequenceParallel(),
+            "ff_sub_layer": PrepareModuleInput(
+                input_layouts=(Shard(1),),
+                desired_input_layouts=(Replicate(),)
+                ),
+            "ff_sub_layer.wg": ColwiseParallel(),
+            "ff_sub_layer.wg1_fused": ColwiseParallel(),
+            "ff_sub_layer.w2": RowwiseParallel(output_layouts=Shard(1)),
+            "ff_sub_layer.w1": ColwiseParallel(),
+            }
+        for i, layer in enumerate(self.layers):
+            parallelize_module(layer, self.distributed_strategy.device_mesh, plan)
 
 
 # Register common LLaMA variants with the model registration API
