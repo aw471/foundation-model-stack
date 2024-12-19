@@ -21,6 +21,7 @@ from fms.utils import serialization
 from fms.utils.activation import str_to_activation
 from fms.utils.config import ModelConfig
 from fms.utils.tokenizers import _has_hf
+from torch.profiler import profile, ProfilerActivity, record_function
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,12 @@ class LLaMABlock(nn.Module):
         residual = x
         x = self.ff_ln(x)
         x = self.ff_sub_layer(x)
+        # with profile(
+        #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        #     on_trace_ready=torch.profiler.tensorboard_trace_handler('./traces'),
+        #     record_shapes = True, profile_memory = True, with_stack=False) as profiler:
+        #     x = self.ff_sub_layer(x)
+        # print(profiler.key_averages(group_by_stack_n=10))
         if self.config.p_dropout != 0:
             x = self.dropout(x)
         # another residual

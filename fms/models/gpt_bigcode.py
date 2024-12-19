@@ -131,7 +131,7 @@ class GPTBigCodeHeadless(nn.Module):
         layers = []
         for i in range(self.config.nlayers):
             block = GPTBigCodeBlock(self.config)
-            block_module = self.distributed_strategy.distribute_layer(block, i)
+            block_module = self.distributed_strategy.distribute_layer(block, i,model='gpt_bigcode')
             layers.append(block_module)
         self.layers = nn.ModuleList(layers)
 
@@ -141,7 +141,7 @@ class GPTBigCodeHeadless(nn.Module):
         )
 
         self.dec_norm = self.distributed_strategy.distribute_module(
-            nn.LayerNorm(self.config.emb_dim, eps=self.config.ln_eps), final_layers=True
+            nn.LayerNorm(self.config.emb_dim, eps=self.config.ln_eps), final_layers=True,model='gpt_bigcode'
         )
 
         if self.config.emb_dropout:
@@ -159,7 +159,12 @@ class GPTBigCodeHeadless(nn.Module):
         ] = None,
     ):
         """compute the position ids if the use happened not to give any"""
+        print("INSIDE HEREERERER")
+        # print(is_pad)
+        # print(is_pad.shape)
+
         position_ids = ((~is_pad).cumsum(1) - 1).clamp(min=0)
+        print("INSIDE HEREERERER")
 
         # Compute position_ids based on cache config
         if (
